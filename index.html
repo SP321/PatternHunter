@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Pattern Hunter</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <header>
+    <h1>Pattern Hunter</h1>
+    <div class="hint">Pick the pattern appears in the grid.</div>
+  </header>
+
+  <main>
+    <section class="left">
+      <div class="panel">
+        <div id="options" class="options">
+          <canvas class="optCanvas" data-idx="0" tabindex="0" aria-label="Option 1"></canvas>
+          <canvas class="optCanvas" data-idx="1" tabindex="0" aria-label="Option 2"></canvas>
+          <canvas class="optCanvas" data-idx="2" tabindex="0" aria-label="Option 3"></canvas>
+          <canvas class="optCanvas" data-idx="3" tabindex="0" aria-label="Option 4"></canvas>
+        </div>
+      </div>
+
+      <div class="panel stats">
+        <div class="row"><span>Streak</span><span class="badge"><span id="streak">0</span></span></div>
+        <div class="row"><span>Streak Duration</span><span class="badge" id="streakTime">00:00</span></div>
+        <div class="row"><span>Grid Duration</span><span class="badge" id="qTime">00:00</span></div>
+
+        <div class="row btns">
+          <div class="rc">
+            <label>Rows <input id="rowsInput" type="number" min="8" max="60" step="1" value="8"></label>
+            <label>Cols <input id="colsInput" type="number" min="8" max="60" step="1" value="8"></label>
+          </div>
+        </div>
+        <div class="row">
+          <label class="modeToggle">
+            <input id="bwToggle" type="checkbox" value=0> Black & White mode
+          </label>
+        </div>
+        <div class="row">
+          <div class="btnset">
+            <button id="newGame" class="btn">New Round</button>
+            <button id="reveal" class="btn" title="Show answer and reset">Reveal Answer</button>
+        </div>
+
+        </div>
+      </div>
+    </section>
+
+    <section class="boardWrap" id="boardWrap">
+      <canvas id="boardCanvas" aria-label="grid"></canvas>
+    </section>
+  </main>
+
+  <footer>
+    <div class="status" id="status"></div>
+  </footer>
+
+</body>
+  <script src="js/game.js"></script>
+</html>
