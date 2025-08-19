@@ -242,3 +242,20 @@ main {
 	overflow: hidden;
 	text-overflow: ellipsis;
 }
+.author {
+  margin-top: 0.5rem;
+  text-align: right;
+  font-size: 0.9rem;
+  color: var(--muted);
+}
+
+.author a {
+  color: #3b82f6;
+  text-decoration: none;
+  margin-left: 0.25rem;
+}
+
+.author a:hover {
+  color: #60a5fa;
+  text-decoration: underline;
+}
