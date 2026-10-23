@@ -17,12 +17,16 @@
 <body>
   <header>
     <h1>Pattern Hunter</h1>
-    <div class="hint">Pick the pattern appears in the grid.</div>
   </header>
 
   <main>
     <section class="left">
       <div class="panel">
+        <div class="modeRow">
+          <button id="modeSingle" class="btn modeBtn" data-mode="single" title="Find the shown pattern on the grid">Single</button>
+          <button id="modeFour" class="btn modeBtn" data-mode="oneOfFour" title="Pick the right option or find it on the grid">One Of Four</button>
+        </div>
+        <div class="status" id="status"></div>
         <div id="options" class="options">
           <canvas class="optCanvas" data-idx="0" tabindex="0" aria-label="Option 1"></canvas>
           <canvas class="optCanvas" data-idx="1" tabindex="0" aria-label="Option 2"></canvas>
@@ -33,13 +37,12 @@
 
       <div class="panel stats">
         <div class="row"><span>Streak</span><span class="badge"><span id="streak">0</span></span></div>
-        <div class="row"><span>Streak Duration</span><span class="badge" id="streakTime">00:00</span></div>
-        <div class="row"><span>Grid Duration</span><span class="badge" id="qTime">00:00</span></div>
+        <div class="row"><span>Total Streak Time</span><span class="badge" id="streakTime">00:00</span></div>
+        <div class="row"><span>Current Round Time</span><span class="badge" id="qTime">00:00</span></div>
 
         <div class="row btns">
           <div class="rc">
-            <label>Rows <input id="rowsInput" type="number" min="8" max="60" step="1" value="8"></label>
-            <label>Cols <input id="colsInput" type="number" min="8" max="60" step="1" value="8"></label>
+            <label>Grid size <input id="sizeInput" type="number" min="8" max="20" step="1" value="8"></label>
           </div>
         </div>
         <div class="row">
@@ -62,7 +65,6 @@
   </main>
 
   <footer>
-    <div class="status" id="status"></div>
     <div class="author">
       <a href="https://github.com/SP321/PatternHunter" target="_blank" rel="noopener noreferrer">
         SP321

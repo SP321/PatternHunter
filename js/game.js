@@ -27,7 +27,7 @@ function readPalette() {
         colorStroke: (CSS.getPropertyValue('--stroke-ring') || 'rgba(255,255,255,0.06)').trim(),
         markerGreen: (CSS.getPropertyValue('--marker-green') || 'rgba(34,197,94,.95)').trim(),
         markerRed: (CSS.getPropertyValue('--marker-red') || 'rgba(239,68,68,.95)').trim(),
-        markerReveal: (CSS.getPropertyValue('--marker-reveal') || 'rgba(34,197,94,.65)').trim(),
+        markerHover: (CSS.getPropertyValue('--marker-hover') || 'rgba(59,130,246,.95)').trim(),
         gapPx: parseFloat(CSS.getPropertyValue('--gap')) || 4,
         dotMin: parseFloat(CSS.getPropertyValue('--dotMin')) || 6,
     };
@@ -37,6 +37,7 @@ let PALETTE = readPalette();
 // =======================
 // State
 // =======================
+let mode = 'single'; // 'single' or 'oneOfFour'
 let rows = 10,
     columns = 10;
 let board = [];
@@ -46,15 +47,14 @@ let planted = {
     r: 0,
     c: 0
 };
-let reveal = false;
-
 let streak = 0;
 let streakAccumMs = 0;
 
 let questionStart = null;
-let timers = [];
+let tickTimer = null;
 let autoNextTimer = null;
 let locked = false;
+let hoverPick = null;
 
 // =======================
 // DOM
@@ -69,16 +69,40 @@ const $qTime = document.getElementById('qTime');
 const $status = document.getElementById('status');
 const $newGame = document.getElementById('newGame');
 const $reveal = document.getElementById('reveal');
-const $rowsInput = document.getElementById('rowsInput');
-const $colsInput = document.getElementById('colsInput');
+const $sizeInput = document.getElementById('sizeInput');
+const $modeButtons = Array.from(document.querySelectorAll('.modeBtn'));
 
 // =======================
 // Canvas
 // =======================
 const DPR = window.devicePixelRatio || 1;
 let cellPx = 14;
-let gapPx = PALETTE.gapPx;
-let dotMin = PALETTE.dotMin;
+const gapPx = PALETTE.gapPx;
+const dotMin = PALETTE.dotMin;
+
+function drawDot(g, cx, cy, radius, isGreen, lineWidth) {
+    g.beginPath();
+    g.arc(cx, cy, radius, 0, Math.PI * 2);
+    g.closePath();
+    g.fillStyle = isGreen ? PALETTE.colorGreen : PALETTE.colorRed;
+    g.fill();
+    g.lineWidth = lineWidth;
+    g.strokeStyle = PALETTE.colorStroke;
+    g.stroke();
+}
+
+function drawBox(g, block, color) {
+    const size = 3 * cellPx + 2 * gapPx;
+    g.lineWidth = Math.max(2, Math.floor(cellPx * 0.18));
+    g.strokeStyle = color;
+    g.strokeRect(block.c * (cellPx + gapPx), block.r * (cellPx + gapPx), size, size);
+}
+
+function refitAll() {
+    sizeBoardCanvasToFit();
+    sizeAndDrawOptionCanvases();
+    drawBoard(null);
+}
 
 function sizeBoardCanvasToFit() {
     const cs = getComputedStyle($boardWrap);
@@ -106,7 +130,8 @@ function sizeBoardCanvasToFit() {
 // Option canvases
 // =======================
 function sizeAndDrawOptionCanvases() {
-    const dims = $optCanvases.map(cv => {
+    const visible = $optCanvases.filter(cv => !cv.classList.contains('optHidden'));
+    const dims = visible.map(cv => {
         const r = cv.getBoundingClientRect();
         return {
             w: r.width || 140,
@@ -117,7 +142,7 @@ function sizeAndDrawOptionCanvases() {
     const headerH = Math.max(18, Math.floor(minH * 0.24));
     const fontPx = Math.max(14, Math.floor(headerH * 0.72));
 
-    $optCanvases.forEach((cv, idx) => {
+    visible.forEach((cv, idx) => {
         const cssW = dims[idx].w,
             cssH = dims[idx].h;
 
@@ -128,7 +153,6 @@ function sizeAndDrawOptionCanvases() {
         g.setTransform(DPR, 0, 0, DPR, 0, 0);
         g.clearRect(0, 0, cssW, cssH);
 
-        // Option number
         g.fillStyle = 'rgba(15,23,42,0.75)';
         g.fillRect(0, 0, cssW, headerH);
         g.strokeStyle = 'rgba(255,255,255,0.10)';
@@ -142,7 +166,7 @@ function sizeAndDrawOptionCanvases() {
         g.fillStyle = '#e5e7eb';
         g.textAlign = 'center';
         g.textBaseline = 'middle';
-        g.fillText(String(idx + 1), cssW / 2, headerH / 2);
+        g.fillText(mode === 'single' ? 'Target' : String(idx + 1), cssW / 2, headerH / 2);
 
         // Option pattern
         const pad = Math.max(6, Math.floor(cssW * 0.06));
@@ -160,17 +184,9 @@ function sizeAndDrawOptionCanvases() {
                 for (let j = 0; j < 3; j++) {
                     const cx = gx + j * cell + cell / 2;
                     const cy = gy + i * cell + cell / 2;
-                    g.beginPath();
-                    g.arc(cx, cy, r, 0, Math.PI * 2);
-                    g.closePath();
-                    g.fillStyle = pat[i][j] ? PALETTE.colorGreen : PALETTE.colorRed;
-                    g.fill();
-                    g.lineWidth = Math.max(1, cell * 0.10);
-                    g.strokeStyle = PALETTE.colorStroke;
-                    g.stroke();
+                    drawDot(g, cx, cy, r, pat[i][j], Math.max(1, cell * 0.10));
                 }
             }
-            // Subtle border for the mini grid
             g.lineWidth = 1;
             g.strokeStyle = 'rgba(255,255,255,0.08)';
             g.strokeRect(gx, gy, gridSize, gridSize);
@@ -181,7 +197,7 @@ function sizeAndDrawOptionCanvases() {
 // =======================
 // Main board
 // =======================
-function drawBoard(markerColor = null) {
+function drawBoard(markerColor = null, wrongPick = null) {
     const g = $boardCanvas.getContext('2d');
     g.setTransform(DPR, 0, 0, DPR, 0, 0);
 
@@ -195,43 +211,32 @@ function drawBoard(markerColor = null) {
         for (let j = 0; j < columns; j++) {
             const cx = j * (cellPx + gapPx) + r;
             const cy = i * (cellPx + gapPx) + r;
-            g.beginPath();
-            g.arc(cx, cy, r, 0, Math.PI * 2);
-            g.closePath();
-            g.fillStyle = board[i][j] ? PALETTE.colorGreen : PALETTE.colorRed;
-            g.fill();
-            g.lineWidth = Math.max(1, cellPx * 0.12);
-            g.strokeStyle = PALETTE.colorStroke;
-            g.stroke();
+            drawDot(g, cx, cy, r, board[i][j], Math.max(1, cellPx * 0.12));
         }
     }
 
-    // Answer marker
-    const x = planted.c * (cellPx + gapPx);
-    const y = planted.r * (cellPx + gapPx);
-    const w = 3 * cellPx + 2 * gapPx;
-    const h = w;
-
     if (markerColor) {
-        g.lineWidth = Math.max(2, Math.floor(cellPx * 0.18));
-        g.strokeStyle = markerColor === 'green' ? PALETTE.markerGreen : PALETTE.markerRed;
-        g.strokeRect(x, y, w, h);
-    } else if (reveal) {
-        g.lineWidth = Math.max(2, Math.floor(cellPx * 0.18));
-        g.strokeStyle = PALETTE.markerReveal;
-        g.strokeRect(x, y, w, h);
+        drawBox(g, planted, markerColor === 'green' ? PALETTE.markerGreen : PALETTE.markerRed);
+    }
+
+    if (wrongPick) {
+        drawBox(g, wrongPick, PALETTE.markerRed);
+    }
+
+    if (hoverPick && !locked && !markerColor) {
+        drawBox(g, hoverPick, PALETTE.markerHover);
     }
 }
 
 // =======================
 // Patterns
 // =======================
+function makeGrid(height, width) {
+    return Array.from({ length: height }, () => Array.from({ length: width }, randBool));
+}
+
 function mkPattern() {
-    const p = Array.from({
-        length: 3
-    }, () => Array.from({
-        length: 3
-    }, randBool));
+    const p = makeGrid(3, 3);
     let sum = 0;
     for (let r = 0; r < 3; r++)
         for (let c = 0; c < 3; c++) sum += p[r][c] ? 1 : 0;
@@ -268,14 +273,6 @@ function generateUniquePatterns(n, minDiff = 4) {
     return arr;
 }
 
-function randomFillBoard() {
-    board = Array.from({
-        length: rows
-    }, () => Array.from({
-        length: columns
-    }, randBool));
-}
-
 function placePatternAt(mat, r, c, pat) {
     for (let i = 0; i < 3; i++)
         for (let j = 0; j < 3; j++)
@@ -291,7 +288,6 @@ function patternMatchesAt(mat, r, c, pat) {
 
 
 const SWEEPS = [{
-        name: 'TL_BR',
         rStart: 0,
         rEnd: () => rows - 3,
         rStep: 1,
@@ -301,7 +297,6 @@ const SWEEPS = [{
         flip: (r, c) => [r + 2, c + 2]
     },
     {
-        name: 'TR_BL',
         rStart: 0,
         rEnd: () => rows - 3,
         rStep: 1,
@@ -311,7 +306,6 @@ const SWEEPS = [{
         flip: (r, c) => [r + 2, c]
     },
     {
-        name: 'BL_TR',
         rStart: () => rows - 3,
         rEnd: 0,
         rStep: -1,
@@ -321,7 +315,6 @@ const SWEEPS = [{
         flip: (r, c) => [r, c + 2]
     },
     {
-        name: 'BR_TL',
         rStart: () => rows - 3,
         rEnd: 0,
         rStep: -1,
@@ -332,7 +325,7 @@ const SWEEPS = [{
     }
 ];
 
-function breakAllMatches(patterns, exceptCoord = null, blacklistCells = new Set()) {
+function breakAllMatches(patterns, blacklistCells) {
     let changed = false;
     for (const s of SWEEPS) {
         const rStart = typeof s.rStart === 'function' ? s.rStart() : s.rStart;
@@ -342,7 +335,7 @@ function breakAllMatches(patterns, exceptCoord = null, blacklistCells = new Set(
 
         for (let r = rStart; s.rStep > 0 ? r <= rEnd : r >= rEnd; r += s.rStep) {
             for (let c = cStart; s.cStep > 0 ? c <= cEnd : c >= cEnd; c += s.cStep) {
-                if (exceptCoord && r === exceptCoord.r && c === exceptCoord.c) continue;
+                if (r === planted.r && c === planted.c) continue;
                 for (const pat of patterns) {
                     if (patternMatchesAt(board, r, c, pat)) {
                         const [fr, fc] = s.flip(r, c);
@@ -361,7 +354,7 @@ function breakAllMatches(patterns, exceptCoord = null, blacklistCells = new Set(
     return changed;
 }
 
-function sanitizeBoard(correctPat, decoys, planted) {
+function sanitizeBoard(correctPat, decoys) {
     placePatternAt(board, planted.r, planted.c, correctPat);
 
     const blacklist = new Set();
@@ -373,9 +366,7 @@ function sanitizeBoard(correctPat, decoys, planted) {
 
     let guard = 0;
     while (guard++ < 5) {
-        const changed = breakAllMatches(decoys, planted, blacklist);
-        if (guard > 2)
-            console.log("IMPOSSIBLE");
+        const changed = breakAllMatches(decoys, blacklist);
         placePatternAt(board, planted.r, planted.c, correctPat);
         if (!changed) break;
     }
@@ -389,17 +380,20 @@ function statusMessage(msg) {
 }
 
 function updateTimersLoop() {
-    timers.forEach(clearInterval);
-    timers = [];
-    timers.push(setInterval(() => {
+    clearInterval(tickTimer);
+    tickTimer = setInterval(() => {
         $streakTime.textContent = fmtTime(streakAccumMs);
         if (questionStart) $qTime.textContent = fmtTime(now() - questionStart);
-    }, 200));
+    }, 200);
 }
 
 function setLocked(v) {
     locked = v;
     $optCanvases.forEach(cv => cv.classList.toggle('optDisabled', v));
+}
+
+function clearOptionMarks() {
+    $optCanvases.forEach(cv => cv.classList.remove('opt-correct', 'opt-wrong'));
 }
 
 function resetForWrongOrReveal() {
@@ -413,42 +407,68 @@ function resetForWrongOrReveal() {
 // =======================
 // Round start
 // =======================
+function readGridSize() {
+    const value = parseInt($sizeInput.value, 10);
+    if (Number.isNaN(value)) return 8;
+    return Math.max(8, Math.min(20, value));
+}
+
 function newRound() {
-    const rV = Math.max(8, Math.min(60, parseInt($rowsInput.value || '16', 16)));
-    const cV = Math.max(8, Math.min(60, parseInt($colsInput.value || '9', 9)));
-    if (rV != rows || cV != columns) {
+    const size = readGridSize();
+    if (size !== rows) {
         resetForWrongOrReveal();
     }
-    rows = rV;
-    columns = cV;
+    rows = size;
+    columns = size;
 
     clearTimeout(autoNextTimer);
     autoNextTimer = null;
+    hoverPick = null;
     setLocked(false);
-    $optCanvases.forEach(c => c.classList.remove('opt-correct', 'opt-wrong'));
+    clearOptionMarks();
+    applyModeLayout();
 
-    // Generate Options
-    options = generateUniquePatterns(4, 4);
-    correctIndex = Math.floor(Math.random() * 4);
+    if (mode === 'single') {
+        options = generateUniquePatterns(1);
+        correctIndex = 0;
+    } else {
+        options = generateUniquePatterns(4, 4);
+        correctIndex = Math.floor(Math.random() * 4);
+    }
 
-    randomFillBoard();
+    board = makeGrid(rows, columns);
     planted = {
         r: Math.floor(Math.random() * (rows - 2)),
         c: Math.floor(Math.random() * (columns - 2))
     };
-    placePatternAt(board, planted.r, planted.c, options[correctIndex]);
 
     const decoys = options.filter((_, i) => i !== correctIndex);
-    sanitizeBoard(options[correctIndex], decoys, planted);
+    sanitizeBoard(options[correctIndex], decoys);
 
-    sizeBoardCanvasToFit();
-    sizeAndDrawOptionCanvases();
-    drawBoard(null);
+    refitAll();
 
     questionStart = now();
     $qTime.textContent = '00:00';
-    statusMessage("Find the pattern");
+    statusMessage(mode === 'single'
+        ? 'The target pattern is on the grid. Find and click it.'
+        : 'One of the four options is on the grid. Find and click it, or pick the correct option.');
     updateTimersLoop();
+}
+
+// =======================
+// Game modes
+// =======================
+function applyModeLayout() {
+    const single = mode === 'single';
+    $optionsWrap.classList.toggle('single', single);
+    $optCanvases.forEach((cv, idx) => cv.classList.toggle('optHidden', single && idx > 0));
+    $modeButtons.forEach(btn => btn.classList.toggle('active', btn.dataset.mode === mode));
+}
+
+function startNewGame(newMode) {
+    mode = newMode;
+    resetForWrongOrReveal();
+    newRound();
 }
 
 // =======================
@@ -460,7 +480,7 @@ function choose(i) {
     if (!cv) return;
 
     const isCorrect = (i === correctIndex);
-    $optCanvases.forEach(c => c.classList.remove('opt-correct', 'opt-wrong'));
+    clearOptionMarks();
 
     if (isCorrect) {
         const qms = now() - questionStart;
@@ -468,25 +488,40 @@ function choose(i) {
         $streakTime.textContent = fmtTime(streakAccumMs);
 
         cv.classList.add('opt-correct');
-        statusMessage(`✅ Correct! Option ${i+1}.`);
+        statusMessage(mode === 'single' ? 'Correct!' : `Correct! Option ${i+1}.`);
         streak++;
         $streak.textContent = String(streak);
 
         setLocked(true);
         drawBoard('green');
+        questionStart = null;
 
-        autoNextTimer = setTimeout(() => {
-            cv.classList.remove('opt-correct');
-            autoNextTimer = null;
-            newRound();
-        }, 500);
+        autoNextTimer = setTimeout(newRound, 500);
     } else {
         cv.classList.add('opt-wrong');
-        $optCanvases[correctIndex].classList.add('opt-correct');
-        statusMessage(`Wrong. It was ${correctIndex+1}.`);
-        drawBoard('red');
-        resetForWrongOrReveal();
+        failRound(`Wrong. It was ${correctIndex+1}.`, 'red');
     }
+}
+
+function chooseOnBoard(r, c) {
+    if (locked) return;
+
+    if (patternMatchesAt(board, r, c, options[correctIndex])) {
+        planted = { r, c };
+        choose(correctIndex);
+        return;
+    }
+
+    clearOptionMarks();
+    failRound(mode === 'single' ? 'Wrong spot.' : `Wrong spot. It was option ${correctIndex+1}.`, 'green', { r, c });
+}
+
+// Shared ending for a wrong pick or a reveal: show the answer and reset the streak
+function failRound(message, markerColor, wrongPick = null) {
+    $optCanvases[correctIndex].classList.add('opt-correct');
+    statusMessage(message);
+    drawBoard(markerColor, wrongPick);
+    resetForWrongOrReveal();
     questionStart = null;
 }
 
@@ -494,51 +529,68 @@ function choose(i) {
 // Keybinds and Buttons
 // =======================
 $optCanvases.forEach(cv => {
-    cv.addEventListener('click', () => choose(parseInt(cv.dataset.idx, 10)));
+    cv.addEventListener('click', () => {
+        if (mode === 'oneOfFour') choose(parseInt(cv.dataset.idx, 10));
+    });
+});
+
+$modeButtons.forEach(btn => {
+    btn.addEventListener('click', () => startNewGame(btn.dataset.mode));
+});
+
+function blockUnderCursor(e) {
+    const rect = $boardCanvas.getBoundingClientRect();
+    const step = cellPx + gapPx;
+    const row = Math.floor((e.clientY - rect.top) / step);
+    const col = Math.floor((e.clientX - rect.left) / step);
+    return {
+        r: Math.max(0, Math.min(rows - 3, row - 1)),
+        c: Math.max(0, Math.min(columns - 3, col - 1))
+    };
+}
+
+$boardCanvas.addEventListener('mousemove', (e) => {
+    if (locked) return;
+    const pick = blockUnderCursor(e);
+    if (hoverPick && pick.r === hoverPick.r && pick.c === hoverPick.c) return;
+    hoverPick = pick;
+    drawBoard(null);
+});
+
+$boardCanvas.addEventListener('mouseleave', () => {
+    hoverPick = null;
+    if (!locked) drawBoard(null);
+});
+
+$boardCanvas.addEventListener('click', (e) => {
+    const pick = blockUnderCursor(e);
+    chooseOnBoard(pick.r, pick.c);
 });
 
 window.addEventListener('keydown', (e) => {
-    if (e.key >= '1' && e.key <= '4') {
+    const el = e.target;
+    const isTextInput = el.tagName === 'INPUT' && !['checkbox', 'radio', 'button'].includes(el.type);
+    if (isTextInput || el.tagName === 'TEXTAREA' || el.isContentEditable) return;
+
+    if (mode === 'oneOfFour' && e.key >= '1' && e.key <= '4') {
         e.preventDefault();
         choose(parseInt(e.key, 10) - 1);
     }
-    if (e.key.toLowerCase() === 'r') {
-        drawBoard('green');
-        statusMessage(`Revealed answer: ${correctIndex+1}.`);
-        resetForWrongOrReveal();
-    }
 });
 
-$newGame.addEventListener('click', () => {
-    statusMessage('New round.');
-    newRound();
-});
+$newGame.addEventListener('click', newRound);
 
 $reveal.addEventListener('click', () => {
-    questionStart = null;
-    $optCanvases[correctIndex].classList.add('opt-correct');
-    drawBoard('green');
-    statusMessage(`Revealed answer: ${correctIndex+1}.`);
-    resetForWrongOrReveal();
+    failRound(mode === 'single' ? 'Revealed answer.' : `Revealed answer: ${correctIndex+1}.`, 'green');
 });
 
 const $bwToggle = document.getElementById('bwToggle');
 $bwToggle.addEventListener('change', () => {
     document.body.classList.toggle('bw', $bwToggle.checked);
     PALETTE = readPalette();
-    gapPx = PALETTE.gapPx;
-    dotMin = PALETTE.dotMin;
-    sizeBoardCanvasToFit();
-    sizeAndDrawOptionCanvases();
-    drawBoard(null);
+    refitAll();
 });
 
-
-function refitAll() {
-    sizeBoardCanvasToFit();
-    sizeAndDrawOptionCanvases();
-    drawBoard(null);
-}
 window.addEventListener('resize', refitAll);
 window.addEventListener('load', refitAll);
 
@@ -548,8 +600,4 @@ ro.observe($optionsWrap);
 // =======================
 // Init
 // =======================
-(function init() {
-    sizeAndDrawOptionCanvases();
-    newRound();
-
-})();
+newRound();

@@ -18,7 +18,7 @@
   --stroke-ring: rgba(255,255,255,0.06);
   --marker-green: rgba(34,197,94,.95);
   --marker-red:   rgba(239,68,68,.95);
-  --marker-reveal: rgba(34,197,94,.65);
+  --marker-hover: rgba(59,130,246,.95);
 
   --gap: 4;
   --dotMin: 6;
@@ -51,7 +51,8 @@ body {
 	color: var(--text);
 	font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Noto Sans";
 	display: grid;
-	grid-template-rows: auto 1fr auto;
+	grid-template-columns: minmax(0, 1fr);
+	grid-template-rows: auto minmax(0, 1fr) auto;
 	gap: 0;
 }
 
@@ -77,11 +78,6 @@ h1 {
 	font-size: 16px
 }
 
-.hint {
-	color: var(--muted);
-	font-size: 12px
-}
-
 main {
 	padding: 10px 12px;
 	display: grid;
@@ -89,13 +85,6 @@ main {
 	gap: 12px;
 	height: 100%;
 	min-height: 0;
-}
-
-@media (max-width: 900px) {
-	main {
-		grid-template-columns: 1fr;
-		grid-template-rows: auto 1fr;
-	}
 }
 
 .panel {
@@ -131,6 +120,29 @@ main {
   border-radius: 8px;
   background: var(--panel, #222);
   display: block;
+}
+
+.modeRow {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.modeRow .btn {
+  flex: 1;
+}
+
+.options.single {
+  grid-template-columns: 1fr;
+}
+
+.options.single .optCanvas {
+  width: 50%;
+  justify-self: center;
+}
+
+.optHidden {
+  display: none;
 }
 
 .optCanvas:focus-visible {
@@ -191,6 +203,11 @@ main {
 	cursor: pointer;
 }
 
+.btn.active {
+	background: #4338ca;
+	border-color: #6366f1;
+}
+
 .rc {
 	display: flex;
 	gap: 8px;
@@ -238,14 +255,16 @@ main {
 }
 
 .status {
-	white-space: nowrap;
-	overflow: hidden;
-	text-overflow: ellipsis;
+	font-size: 12px;
+	line-height: 1.4;
+	min-height: 2.8em;
+	margin-bottom: 8px;
+	color: var(--muted);
 }
 .author {
-  margin-top: 0.5rem;
+  margin-left: auto;
   text-align: right;
-  font-size: 0.9rem;
+  font-size: 11px;
   color: var(--muted);
 }
 
@@ -258,4 +277,55 @@ main {
 .author a:hover {
   color: #60a5fa;
   text-decoration: underline;
+}
+
+/* mobile layout */
+@media (max-width: 900px) {
+  main {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
+    gap: 8px;
+    padding: 8px;
+  }
+
+  .left {
+    padding: 0;
+    gap: 8px;
+    min-width: 0;
+  }
+
+  .panel {
+    padding: 8px;
+  }
+
+  .modeRow {
+    margin-bottom: 8px;
+  }
+
+  .btn {
+    padding: 6px 10px;
+  }
+
+  .options {
+    grid-template-columns: repeat(4, 1fr);
+    gap: 6px;
+  }
+
+  .options.single .optCanvas {
+    width: 25%;
+  }
+
+  .stats {
+    grid-template-columns: 1fr 1fr;
+    gap: 6px 12px;
+    font-size: 12px;
+  }
+
+  .stats .row:last-child {
+    grid-column: 1 / -1;
+  }
+
+  .badge {
+    padding: 4px 8px;
+  }
 }
